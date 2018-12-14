@@ -8,11 +8,6 @@ const get_user_password = (eppn) => (
     helpers.sha256(eppn + conf.common_password_part)
 );
 
-const request_options = {
-    headers: { 'User-Agent': 'Mozilla/5.0 (xxx; rv:61.0) Gecko/20100101 Firefox/61.0' },
-    jar: true,
-};
-
 const raw_request = { 
     simple: false, followRedirects: false, 
     resolveWithFullResponse: true,

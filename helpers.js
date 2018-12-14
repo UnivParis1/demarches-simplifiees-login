@@ -9,7 +9,11 @@ exports.sha256 = function (data) {
 };
 
 exports.new_navigation = function(request_options) {
-    const rp = rpn.defaults(request_options);
+    const rp = rpn.defaults({
+        headers: { 'User-Agent': 'Mozilla/5.0 (xxx; rv:61.0) Gecko/20100101 Firefox/61.0' },
+        jar: true,
+        ...(request_options || {}),
+    });
     let prev_url;
     return {
         submit(form$, params) {

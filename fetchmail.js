@@ -6,7 +6,7 @@ let _on_modify_password_link;
 let _connection;
 function handleMails() {
     _connection.search(['UNSEEN'], { bodies: ['TEXT'] }).then(msgs => {
-        if (msgs.length > 0) console.log(msgs.length + " new messages");
+        if (msgs.length > 0) console.log("fetchmail:", msgs.length, " new messages");
         msgs.forEach(msg => {
             let valid = false;
             if (msg.parts.length !== 1) {

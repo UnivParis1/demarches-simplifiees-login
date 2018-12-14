@@ -30,7 +30,7 @@ function is_in_progress(eppn) {
 }
 
 function trigger_mail_with_modify_password_link(eppn) {
-    const navigation = helpers.new_navigation(request_options);
+    const navigation = helpers.new_navigation();
     navigation.request({
         url: `${conf.fcm_base_url}set_password`,
     }).then(html => {
@@ -43,9 +43,9 @@ function trigger_mail_with_modify_password_link(eppn) {
 }
 
 function on_modify_password_link(eppn, url) {
-    console.log("found modify_password_link", eppn, url);
+    console.log("fetchmail: setting password for", eppn, "using", url);
     url = url.replace(/^http:\/\//, 'https://');
-    const navigation = helpers.new_navigation(request_options);
+    const navigation = helpers.new_navigation();
     navigation.request({ url }).then(html => {
         const $ = cheerio.load(html);
         const password = get_user_password(eppn);
@@ -58,41 +58,64 @@ function on_modify_password_link(eppn, url) {
 }
 
 function login(eppn) {
-    const navigation = helpers.new_navigation(request_options);
+    const navigation = helpers.new_navigation();
     return navigation.request({
         url: `${conf.fcm_base_url}profiles/sign_in`,
     }).then(html => {
         const $ = cheerio.load(html);
+        if (!$('form').length) {
+            // weird
+            console.error("weird", html);
+            return { headers: {}, statusCode: 302 };
+        }
         const password = get_user_password(eppn);
         $("#profile_sbt_login").val(eppn);
         $("#profile_password").val(password);
         return navigation.submit($("form"), raw_request).then(response => {
             if (response.statusCode === 302) {
-                // Success!!
+                console.log("successful login", eppn);
                 return response;
             } else {
-                throw "expected 302, got " + response.statusCode;
+                throw "login failed for " + eppn + " (expected 302 got " + response.statusCode + ")";
             }
         });
     });
 }
 
 function login_or_set_password(req, res) {
-    const uid = req.header('REMOTE_USER');
+    const uid = req.header('REMOTE_USER'); 
     if (!uid) return res.send("missing REMOTE_USER");
     const eppn = conf.uid2eppn(uid);
+    if (is_in_progress(eppn)) {
+        return warn_please_wait(res);
+    }
     login(eppn).then(response => {
         // success
         response.headers.location = '/'; // force relative to current vhost (our rev proxy)
         res.set(response.headers);
         res.status(response.statusCode).send("redirecting");
-    }).catch(_ => {
+    }).catch(err => {
+        console.log(err);
         if (!is_in_progress(eppn)) {
+            console.log("trigger_mail_with_modify_password_link", eppn);
             trigger_mail_with_modify_password_link(eppn);
         }
-        res.send("in progress, please wait");
+        warn_please_wait(res);
     });
 }
+
+function warn_please_wait(res) {
+    res.send(`
+<html>
+  <meta http-equiv="refresh" content="10">
+  <body>
+  <div style="margin: 1rem">
+    Votre compte est en cours de création, cela peut prendre plusieurs minutes.
+    Veuillez patienter...
+  </div>
+</body></html>`);
+}
+
 
 function start_http_server() {
     const app = express()

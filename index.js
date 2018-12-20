@@ -15,6 +15,9 @@ const conf_raw_request = {
 
 let in_progress = {};
 
+/**
+ * @param {string} eppn 
+ */
 function is_in_progress(eppn) {
     const in_progress_since = in_progress[eppn];
     if (!in_progress_since) {
@@ -29,6 +32,9 @@ function is_in_progress(eppn) {
     }
 }
 
+/**
+ * @param {string} eppn 
+ */
 function trigger_mail_with_modify_password_link(eppn) {
     const navigation = helpers.new_navigation();
     navigation.request({
@@ -42,6 +48,10 @@ function trigger_mail_with_modify_password_link(eppn) {
     });
 }
 
+/**
+ * @param {string} eppn 
+ * @param {string} url 
+ */
 function on_modify_password_link(eppn, url) {
     console.log("fetchmail: setting password for", eppn, "using", url);
     url = url.replace(/^http:\/\//, 'https://');
@@ -57,6 +67,9 @@ function on_modify_password_link(eppn, url) {
     });
 }
 
+/**
+ * @param {string} eppn 
+ */
 function login(eppn) {
     const navigation = helpers.new_navigation();
     return navigation.request({
@@ -82,6 +95,10 @@ function login(eppn) {
     });
 }
 
+/**
+ * @param {Request} req 
+ * @param {Response} res 
+ */
 function login_or_set_password(req, res) {
     const uid = req.header('REMOTE_USER'); 
     if (!uid) return res.send("missing REMOTE_USER");
@@ -104,6 +121,9 @@ function login_or_set_password(req, res) {
     });
 }
 
+/**
+ * @param {Response} res 
+ */
 function warn_please_wait(res) {
     res.send(`
 <html>

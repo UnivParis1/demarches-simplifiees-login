@@ -37,12 +37,16 @@ function is_in_progress(eppn) {
  */
 function trigger_mail_with_modify_password_link(eppn) {
     const navigation = helpers.new_navigation();
-    navigation.request({
+    return navigation.request({
         url: `${conf.fcm_base_url}set_password`,
     }).then(html => {
         const $ = cheerio.load(html);
         $("#profile_sbt_login").val(eppn);
-        navigation.submit($("form"), conf_raw_request).then(_ => {
+        return navigation.submit($("form"), conf_raw_request).then(response => {
+            if (response.body.match("<div id='error_explanation'>")) {
+                console.error(response.statusCode, response.body);
+                throw `FCM does not know eppn ${eppn}?`;
+            }
             in_progress[eppn] = new Date();
         })
     });
@@ -117,11 +121,16 @@ function login_or_set_password(req, res) {
             res.status(500).send('Internal error in login_or_set_password');
             return;
         }
-        if (!is_in_progress(eppn)) {
+        if (is_in_progress(eppn)) {
+            warn_please_wait(res);
+        } else {
             console.log("trigger_mail_with_modify_password_link", eppn);
-            trigger_mail_with_modify_password_link(eppn);
-        }
-        warn_please_wait(res);
+            trigger_mail_with_modify_password_link(eppn).then(_ => {
+                warn_please_wait(res);
+            }).catch(err => {
+                res.status(500).send(err);
+            });
+        }        
     });
 }
 

@@ -89,7 +89,7 @@ function login(eppn) {
                 console.log("successful login", eppn);
                 return response;
             } else {
-                throw "login failed for " + eppn + " (expected 302 got " + response.statusCode + ")";
+                throw response;
             }
         });
     });
@@ -111,8 +111,12 @@ function login_or_set_password(req, res) {
         response.headers.location = '/'; // force relative to current vhost (our rev proxy)
         res.set(response.headers);
         res.status(response.statusCode).send("redirecting");
-    }).catch(err => {
-        console.log(err);
+    }).catch(response => {
+        if (!response.body.match('Login ou mot de passe incorrect')) {
+            console.error(response.statusCode, response.body);
+            res.status(500).send('Internal error in login_or_set_password');
+            return;
+        }
         if (!is_in_progress(eppn)) {
             console.log("trigger_mail_with_modify_password_link", eppn);
             trigger_mail_with_modify_password_link(eppn);

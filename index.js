@@ -8,7 +8,7 @@ const get_user_password = (eppn) => (
     helpers.sha256(eppn + conf.common_password_part)
 );
 
-const raw_request = { 
+const conf_raw_request = { 
     simple: false, followRedirects: false, 
     resolveWithFullResponse: true,
 };
@@ -36,7 +36,7 @@ function trigger_mail_with_modify_password_link(eppn) {
     }).then(html => {
         const $ = cheerio.load(html);
         $("#profile_sbt_login").val(eppn);
-        navigation.submit($("form"), raw_request).then(_ => {
+        navigation.submit($("form"), conf_raw_request).then(_ => {
             in_progress[eppn] = new Date();
         })
     });
@@ -51,7 +51,7 @@ function on_modify_password_link(eppn, url) {
         const password = get_user_password(eppn);
         $("#profile_password").val(password);
         $("#profile_password_confirmation").val(password);
-        navigation.submit($("form"), raw_request).then(_ => {
+        navigation.submit($("form"), conf_raw_request).then(_ => {
             delete in_progress[eppn];
         });
     });
@@ -71,7 +71,7 @@ function login(eppn) {
         const password = get_user_password(eppn);
         $("#profile_sbt_login").val(eppn);
         $("#profile_password").val(password);
-        return navigation.submit($("form"), raw_request).then(response => {
+        return navigation.submit($("form"), conf_raw_request).then(response => {
             if (response.statusCode === 302) {
                 console.log("successful login", eppn);
                 return response;

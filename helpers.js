@@ -18,6 +18,7 @@ exports.new_navigation = function(request_options) {
     return {
         submit(form$, params) {
             prev_url = url.resolve(prev_url, form$.attr('action'));
+            //console.log("submitting form", prev_url, form$.serializeArray())
             return rp({ 
                 method: 'POST',
                 url: prev_url,

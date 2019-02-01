@@ -7,10 +7,19 @@ module.exports = {
 
     uid2eppn: uid => `${uid}@univ-paris1.fr`,
 
+    admin_uid: 'xxx',
+
     imap: {
         host: 'imap', 
         user: 'foo', password: 'xx',
         //port: 993, tls: true,
+    },
+
+    ldap: {
+        url: 'ldap://ldap',
+        dn: 'cn=fcm-login,ou=admin,dc=univ,dc=fr',
+        password: '',
+        people_base: '',
     },
 
     http_server: {

@@ -1,8 +1,12 @@
+const util = require('util')
 const express = require('express')
 const cheerio = require('cheerio');
 const conf = require('./conf');
 const helpers = require('./helpers');
 const fetchmail = require('./fetchmail');
+const ldap = require('./ldap');
+
+const setTimeoutPromise = util.promisify(setTimeout);
 
 const get_user_password = (eppn) => (
     helpers.sha256(eppn + conf.common_password_part)
@@ -43,14 +47,92 @@ function trigger_mail_with_modify_password_link(eppn) {
         const $ = cheerio.load(html);
         $("#profile_sbt_login").val(eppn);
         return navigation.submit($("form"), conf_raw_request).then(response => {
-            if (response.body.match("<div id='error_explanation'>")) {
-                console.error(response.statusCode, response.body);
-                throw `FCM does not know eppn ${eppn}?`;
+            if (response.body.match(/Identifiant de connexion n’a pas été trouvé/)) {
+                throw `unknown eppn`;
+            }
+            const m = response.body.match(/<div id='error_explanation'>[\s\S]*<\/div>/);
+            if (m) {
+                console.error(response.statusCode, m[0]);
+                throw m[0]
             }
             in_progress[eppn] = new Date();
         })
     });
 }
+
+const ldap2fcmId = {
+    "givenName": [ "profile_name" ],
+    "sn": [ "profile_lastname" ],
+    "supannCivilite": [ "profile_civility", "profile_gender" ],
+    "up1BirthDay": [ "profile_birthday" ],
+    "eduPersonPrincipalName": [ "profile_sbt_login" ],
+    "mail": [ "profile_professional_email" ],
+    "mobile": [ "profile_professional_mobile" ],
+    "telephoneNumber": [ "profile_professional_landline" ],
+};
+
+function convert_ldap_to_fcm(ldapUser) {
+    const to_simplename = (s) => s.normalize('NFD').replace(/[^a-z0-9]+/gi, ' ').replace(/^ +| +$/g, '')
+    const civility_to_english = { "M.": "mr", "Mme": "mrs", "Mlle": "miss" }
+    const civilite2gender = { "M.": "male", "Mme": "female", "Mlle": "female" }
+    const format_phone = (s) => s.replace(/[ .-]/g, '')
+    const convertions = {
+        "profile_birthday": (s) => s.replace(/^(\d\d\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)Z$/, "$1-$2-$3"),
+        "profile_civility": (s) => civility_to_english[s],
+        "profile_gender": (s) => civilite2gender[s],
+        "profile_professional_landline": format_phone,
+        "profile_professional_mobile": format_phone,
+        "profile_name": to_simplename,
+        "profile_lastname": to_simplename,
+    }
+    let r = {};
+    for (let attr in ldapUser) {
+        for (let fcmId of ldap2fcmId[attr] || []) {
+            const convert = convertions[fcmId] || (s => s);
+            r[fcmId] = convert(ldapUser[attr]) || '';
+        }
+    }
+    r.profile_category = "Employee";
+    return r;
+}
+
+function create_user_raw(navigation, fcmUser) {
+    navigation.request({
+        url: `${conf.fcm_base_url}profiles/management/profiles/new`,
+    }).then(html => {
+        //console.log('create_user_raw', html)
+        const $ = cheerio.load(html);
+        for (let id in fcmUser) $("#" + id).val(fcmUser[id]);
+        return navigation.submit($("form"), conf_raw_request).then(response => {
+            const m = response.body.match(/Une erreur est survenue. Votre profil n&#39;a pu être enregistré[\s\S]*?<\/div>/);
+            if (m) {
+                console.error(m[0])
+                throw m[0]
+            } else if (response.statusCode === 302) {
+                // it should be ok
+            } else {
+                console.error("create_user failed", response.status);
+                console.log(response.body);
+                throw "create_user failed"
+            }
+        })
+    })
+}
+
+function create_user(eppn) {
+    const filter = `(eduPersonPrincipalName=${eppn})`
+    return ldap.searchOne(conf.ldap.people_base, { filter, attributes: Object.keys(ldap2fcmId) }).then(convert_ldap_to_fcm).then(fcmUser => {
+        console.log(fcmUser);
+        const navigation = helpers.new_navigation()
+        return login(conf.uid2eppn(conf.admin_uid), navigation).then(response => {
+            //console.log(response);
+            return create_user_raw(navigation, fcmUser);
+        })
+    }).catch(err => {         
+        throw err === 'not found' ? `user ${eppn} not found in LDAP ?!` : err
+    })
+}
+
 
 /**
  * @param {string} eppn 
@@ -74,8 +156,7 @@ function on_modify_password_link(eppn, url) {
 /**
  * @param {string} eppn 
  */
-function login(eppn) {
-    const navigation = helpers.new_navigation();
+function login(eppn, navigation) {
     return navigation.request({
         url: `${conf.fcm_base_url}profiles/sign_in`,
     }).then(html => {
@@ -99,6 +180,17 @@ function login(eppn) {
     });
 }
 
+const trigger_mail_with_modify_password_link_maybe_create_user = (eppn) => (
+    trigger_mail_with_modify_password_link(eppn).catch(err => {
+        if (err === "unknown eppn") {
+            console.log("trying to create user " + eppn + " in FCM")
+            return create_user(eppn).then(_ => setTimeoutPromise(_ => trigger_mail_with_modify_password_link(eppn), 1000))
+        } else {
+            throw err
+        }
+    })
+)
+
 /**
  * @param {Request} req 
  * @param {Response} res 
@@ -110,7 +202,7 @@ function login_or_set_password(req, res) {
     if (is_in_progress(eppn)) {
         return warn_please_wait(res);
     }
-    login(eppn).then(response => {
+    login(eppn, helpers.new_navigation()).then(response => {
         // success
         response.headers.location = '/'; // force relative to current vhost (our rev proxy)
         res.set(response.headers);
@@ -125,7 +217,7 @@ function login_or_set_password(req, res) {
             warn_please_wait(res);
         } else {
             console.log("trigger_mail_with_modify_password_link", eppn);
-            trigger_mail_with_modify_password_link(eppn).then(_ => {
+            trigger_mail_with_modify_password_link_maybe_create_user(eppn).then(_ => {
                 warn_please_wait(res);
             }).catch(err => {
                 res.status(500).send(err);

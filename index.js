@@ -208,8 +208,9 @@ function login_or_set_password(req, res) {
         res.set(response.headers);
         res.status(response.statusCode).send("redirecting");
     }).catch(response => {
-        if (!response.body.match('Login ou mot de passe incorrect')) {
-            console.error(response.statusCode, response.body);
+        if (!response.body.match(/Login ou mot de passe incorrect|Votre compte est verrouillé/)) {
+            console.error("login failed but weird html", response.statusCode);
+	    console.log(response.body);
             res.status(500).send('Internal error in login_or_set_password');
             return;
         }

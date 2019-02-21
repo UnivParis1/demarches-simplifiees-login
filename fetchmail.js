@@ -32,6 +32,10 @@ function start() {
         onmail: handleMails,
     }).then(connection => {
         _connection = connection;
+        connection.on("close", err => {
+            console.log("disconnected, reconnecting...");
+            start();
+        });
         connection.openBox('INBOX');
     });
 }

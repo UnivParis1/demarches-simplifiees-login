@@ -37,6 +37,10 @@ function start() {
             start();
         });
         connection.openBox('INBOX');
+    }).catch(err => {
+        console.error(err);
+        console.error("error connecting to imap server, exiting.");
+        process.exit(1);
     });
 }
 

@@ -47,7 +47,7 @@ function trigger_mail_with_modify_password_link(eppn) {
         const $ = cheerio.load(html);
         $("#profile_sbt_login").val(eppn);
         return navigation.submit($("form"), conf_raw_request).then(response => {
-            if (response.body.match(/Identifiant de connexion n’a pas été trouvé/)) {
+            if (response.body.includes('Identifiant de connexion non trouvé(e)')) {
                 throw `unknown eppn`;
             }
             const m = response.body.match(/<div id='error_explanation'>[\s\S]*<\/div>/);

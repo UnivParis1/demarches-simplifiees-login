@@ -1,3 +1,5 @@
+#!/usr/bin/env nodejs
+
 const util = require('util')
 const express = require('express')
 const cheerio = require('cheerio');

@@ -7,19 +7,11 @@ const mailTransporter = nodemailer.createTransport(conf.sendmail.transport);
 // params example:
 // { from: 'xxx <xxx@xxx>', to: 'foo@bar, xxx@boo', subject: 'xxx', text: '...', html: '...' }
 const send = (params) => {
-    if (!params.envelope) {
-        params = { from: conf.sendmail.from, ... params };
-    }
+    params = { from: conf.sendmail.from, ... params };
     if (conf.sendmail.intercept) {
         const cc = (params.cc || '').toString();
-        if (params.subject) {
-            params.subject = '[would be sent to ' + params.to + (cc ? " Cc " + cc : '') + '] ' + params.subject;
-        }
-        if (params.envelope?.to) {
-            params.envelope.to = conf.sendmail.intercept;
-        } else {
-            params.to = conf.sendmail.intercept;            
-        }
+        params.subject = '[would be sent to ' + params.to + (cc ? " Cc " + cc : '') + '] ' + params.subject;
+        params.to = conf.sendmail.intercept;            
         delete params.cc;
     }
     mailTransporter.sendMail(params, (error, info) => {

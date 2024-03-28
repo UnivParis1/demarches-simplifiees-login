@@ -1,77 +1,35 @@
 const fs = require('fs')
 const imap_simple = require('imap-simple');
-const quotedPrintable = require('quoted-printable');
-const sendmail = require('./sendmail')
 const conf = require('./conf');
 
-let _on_modify_password_link;
+/** @typedef {{attributes: { date: Date, uid: string }, headers: Object<string, string[]>, html: string}} Mail */
 
-function handle_invite_instructeur(msg) {
-    const mail = msg.headers.to?.[0]
-    const url = msg.body.match(/(https:\/\/.*\/users\/activate[?]token=\w+)/)?.[1];
-    if (mail && url) {
-        _on_modify_password_link(mail, url);
-        return true
-    } else {
-        console.error("weird mail", msg.attributes.date);
-        return false
-    }
-}
+/** @type {(msg: Mail) => boolean} */
+let _on_mail;
 
-function handle_reset_password_instructions(msg) {
-    const mail = msg.headers.to?.[0]
-    const url = msg.body.match(/(https:\/\/.*\/users\/password\/edit[?]reset_password_token=\w+)/)?.[1];
-    if (mail && url) {
-        _on_modify_password_link(mail, url);
-        return true
-    } else {
-        console.error("weird mail", msg.attributes.date);
-        return false
-    }
-}
 
 let _connection;
 function handleMails() {
-    _connection.search(['UNSEEN'], { bodies: ['HEADER', 'TEXT'] }).then(msgs => {
+    _connection.search(['UNSEEN'], { bodies: ['HEADER'], struct: true }).then(msgs => {
         if (msgs.length > 0) console.log("fetchmail:", msgs.length, " new messages");
         for (const raw_msg of msgs) {
-            const msg = {
-                attributes: raw_msg.attributes,
-                headers: raw_msg.parts.find(p => p.which === 'HEADER')?.body,
-                body: quotedPrintable.decode(raw_msg.parts.find(p => p.which === 'TEXT')?.body),
-            }
-            if (!msg.headers || !msg.body) {
-                console.error("weird mail", msg.attributes.date);
-                next;
-            }
-            const cmd = msg.headers['x-dolist-message-name']?.[0]
-            console.log({cmd}, msg.headers.to)
-            let valid = true
-            if (cmd === 'invite_instructeur') {
-                valid = handle_invite_instructeur(msg)
-            } else if (cmd === 'reset_password_instructions') {
-                valid = handle_reset_password_instructions(msg)
-            } else {
-                const body = msg.body.replaceAll(conf.ds_base_url, conf.our_proxy_base_url)
-                //console.log(msg.headers)
-                fs.writeFileSync('/tmp/mail.eml', body)
-                //console.log(body)
-                // otherwise sendmail filtered
-
-                const envelope = {
-                    from: conf.sendmail.from,
-                    to: [msg.headers.to]
+            const parts = imap_simple.getParts(raw_msg.attributes.struct);
+            const htmlPart = parts.find(part => part.subtype === 'html')
+            _connection.getPartData(raw_msg, htmlPart).then(html => {
+                /** @type Mail */
+                const msg = {
+                    attributes: raw_msg.attributes,
+                    headers: raw_msg.parts.find(p => p.which === 'HEADER')?.body,
+                    html,
                 }
-                const headers = [ 'From', 'To', 'Content-Type', 'Content-Transfer-Encoding' ].map(field =>
-                    field + ": " + envelope[field.toLocaleLowerCase()] || msg.headers[field.toLocaleLowerCase()] + "\n"
-                ).join('')
-
-                sendmail.send({
-                    envelope,
-                    raw: headers + "\n\n" + body
-                })
-            }
-            //_connection.addFlags(msg.attributes.uid, valid ? [ '\\Deleted', '\\Seen' ] : [ '\\Seen' ])    
+                let valid = false
+                if (!msg.headers || !msg.html) {
+                    console.error("weird mail", msg.attributes.date);
+                } else {
+                    valid = _on_mail(msg)
+                }
+                _connection.addFlags(msg.attributes.uid, valid ? [ '\\Deleted', '\\Seen' ] : [ '\\Seen' ])    
+            })
         }
     });
 }
@@ -94,9 +52,10 @@ function start() {
     });
 }
 
-module.exports = function (on_modify_password_link) {
-    _on_modify_password_link = on_modify_password_link;
+/**
+ * @param {(msg: Mail) => boolean} on_mail 
+ */
+module.exports = function (on_mail) {
+    _on_mail = on_mail;
     start();
 }
-
-
